@@ -40,7 +40,7 @@ struct ProofOfWork
 
 struct NonceHash{
      int nonce;
-     string hash;
+     char* hash;
 };
 
 // Creates ProofOfWork Struct
@@ -72,7 +72,7 @@ string prepareData(int nonce , ProofOfWork *pow){
 }
 
 // SHA256 algorithm
-string SHA256(string data)
+char* SHA256(string data)
 {
     byte const* pbData = (byte*) data.data();
     unsigned int nDataLen = data.size();
@@ -81,24 +81,32 @@ string SHA256(string data)
     // Computes the hash
     CryptoPP::SHA256().CalculateDigest(abDigest, pbData, nDataLen);
 
-    return string((char*)abDigest);
+    return (char*)abDigest;
 }
 
 // Proof of work algorithm
 NonceHash Run(ProofOfWork *pow){
-     //CryptoPP::Integer hashInt = CryptoPP::Integer(const char *str);
      NonceHash hashnonce;
      hashnonce.nonce = 0;
 
-     cout << "Mining the block containing" << pow->block->Data << endl;
+     cout << "Mining the block containing " << pow->block->Data << endl;
 
      // Run while loop as long as nonce doesn't overflow
      while (hashnonce.nonce < INT_MAX){
           string data = prepareData(hashnonce.nonce,pow);
-          hashnonce.hash = SHA256(data);
+          byte const* pbData = (byte*) data.data();
+          unsigned int nDataLen = data.size();
+          // A pointer to the buffer to receive the hash
+          byte abDigest[CryptoPP::SHA256::DIGESTSIZE];
+
+          // Computes the hash
+          CryptoPP::SHA256().CalculateDigest(abDigest, pbData, nDataLen);
+          hashnonce.hash = (char*)abDigest;
+
+          
           cout << hashnonce.hash;
           // Convert hash to big integer hashInt
-          CryptoPP::Integer hashInt(hashnonce.hash);
+          CryptoPP::Integer hashInt((hashnonce.hash));
 
           // Beak out of the loop if hashInt is less than target 
           if (hashInt<*(pow->target)){
@@ -114,6 +122,27 @@ NonceHash Run(ProofOfWork *pow){
      return hashnonce;
 }
 
+bool Validate(ProofOfWork* pow) {
+
+	string data = prepareData(pow->block->Nonce,pow);
+	byte const* pbData = (byte*) data.data();
+     unsigned int nDataLen = data.size();
+          
+     byte abDigest[CryptoPP::SHA256::DIGESTSIZE];
+
+     CryptoPP::SHA256().CalculateDigest(abDigest, pbData, nDataLen);
+     char* hash = (char*)abDigest;
+
+	CryptoPP::Integer hashInt(hash);
+
+	if (hashInt<*(pow->target)){
+               return true;
+          
+     }else{
+               return false;
+          }
+}
+
 // Blockchain class
 class Blockchain  
 {  
@@ -124,7 +153,7 @@ class Blockchain
      Block NewBlock(string data,string prevBlockHash){
          time_t result = time(nullptr);
          asctime(localtime(&result));
-         struct Block block{result,0,data,prevBlockHash,""};
+         struct Block block{int(result),0,data,prevBlockHash,""};
          ProofOfWork pow = NewProofOfWork(&block);
          NonceHash hashnonce;
          hashnonce = Run(&pow);
@@ -160,10 +189,12 @@ int main() {
 
      vector<Block> blockchain = bc.blockchain;
 
-	for (int i; i<blockchain.size();i++) {
+	for (unsigned int i = 0; i<blockchain.size();i++) {
 		cout<<"Prev. hash: "<< blockchain.back().PrevBlockHash<<endl;
 		cout<<"Data: "<< blockchain.back().Data<<endl;
 		cout<<"Hash: "<< blockchain.back().Hash<<endl;
+		ProofOfWork pow = NewProofOfWork(&blockchain.back());
+		cout<<boolalpha<<"PoW: "<< Validate(&pow)<<endl;
 		
 	}
 
