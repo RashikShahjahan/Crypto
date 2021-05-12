@@ -2,79 +2,110 @@
 #include <vector>  
 #include <string>
 #include <utility> 
-#include "sha256.h"
-#include "BigInt.cpp"
+#include <cryptopp/integer.h> 
+#include <cryptopp/sha.h> 
 #include <sstream>
+#include <chrono>
+#include<ctime>
 
 
 
 using namespace std;
 
+//Specifies difficulty at which the block was mined
 const int targetBits = 24;
 
 
-
+// Struct defining a block
 struct Block
-     {
+     {  //Time block was created
         int Timestamp;
+        // A cryptographic nonce
         int Nonce;
+        // Data stored in the block
         string Data;
+        // Result of hash function of previous block
 	   string PrevBlockHash;
+        // Result of hash function of current block
 	   string Hash; 
      };
+
 
 struct ProofOfWork
 {
      Block *block;
-     BigInt *target;
+     CryptoPP::Integer *target;
       
 };
 
+struct NonceHash{
+     int nonce;
+     string hash;
+};
+
+// Creates ProofOfWork Struct
 ProofOfWork NewProofOfWork( Block *b) {
-	BigInt target = "1";
+     // Target is 1 bit shifted by 256-targetbits
+	CryptoPP::Integer target("1");
 	target = target << (256-targetBits);
 	ProofOfWork pow = ProofOfWork{b, &target};
 
 	return pow;
 }
 
+// Convert decimal int to hex
 string IntToHex(int decimal_value){
      stringstream ss;
-     ss<< hex << decimal_value; // int decimal_value
+     ss<< hex << decimal_value; 
      string res ( ss.str() );
 
      return res;
 }
 
+// Concatanates block members to create data to be hashed 
+string prepareData(int nonce , ProofOfWork *pow){
 
-vector<string> prepareData(int nonce , ProofOfWork *pow){
-
-     vector<string> data = {{"pow.block.PrevBlockHash",
-     "pow.block.Data",
-     IntToHex(pow->block->Timestamp),
-     IntToHex(targetBits),
-     IntToHex(nonce)}, {} };
+     string data = pow->block->PrevBlockHash+pow->block->Data+IntToHex(pow->block->Timestamp)
+     +IntToHex(targetBits)+IntToHex(nonce);
 
      return data;
 }
 
-pair <int, string> Run(ProofOfWork *pow){
-     BigInt hashInt;
-     pair <int, string> hashnonce;
-     hashnonce.first = 0;
+// SHA256 algorithm
+string SHA256(string data)
+{
+    byte const* pbData = (byte*) data.data();
+    unsigned int nDataLen = data.size();
+    // A pointer to the buffer to receive the hash
+    byte abDigest[CryptoPP::SHA256::DIGESTSIZE];
+    // Computes the hash
+    CryptoPP::SHA256().CalculateDigest(abDigest, pbData, nDataLen);
+
+    return string((char*)abDigest);
+}
+
+// Proof of work algorithm
+NonceHash Run(ProofOfWork *pow){
+     //CryptoPP::Integer hashInt = CryptoPP::Integer(const char *str);
+     NonceHash hashnonce;
+     hashnonce.nonce = 0;
 
      cout << "Mining the block containing" << pow->block->Data << endl;
 
-     while (hashnonce.first < INT_MAX){
-          vector<string> data = prepareData(hashnonce.first,&pow);
-          hashnonce.second = sha256(data);
-          cout << hashnonce.second;
-          hashInt = BigInt(hashnonce.second);
+     // Run while loop as long as nonce doesn't overflow
+     while (hashnonce.nonce < INT_MAX){
+          string data = prepareData(hashnonce.nonce,pow);
+          hashnonce.hash = SHA256(data);
+          cout << hashnonce.hash;
+          // Convert hash to big integer hashInt
+          CryptoPP::Integer hashInt(hashnonce.hash);
 
-          if (hashInt<pow->target){
+          // Beak out of the loop if hashInt is less than target 
+          if (hashInt<*(pow->target)){
                break;
+          // Otherwise increment nonce
           }else{
-               hashnonce.first++;
+               hashnonce.nonce++;
           }
 
      }
@@ -83,29 +114,33 @@ pair <int, string> Run(ProofOfWork *pow){
      return hashnonce;
 }
 
+// Blockchain class
 class Blockchain  
 {  
      public:     
      vector<Block> blockchain;  
 
-
+     // Create new block
      Block NewBlock(string data,string prevBlockHash){
-         struct Block block;
+         time_t result = time(nullptr);
+         asctime(localtime(&result));
+         struct Block block{result,0,data,prevBlockHash,""};
          ProofOfWork pow = NewProofOfWork(&block);
-         pair <int, string> hashnonce;
-         hashnonce = Run(pow);
+         NonceHash hashnonce;
+         hashnonce = Run(&pow);
 
-         block.Nonce = hashnonce.first;
-         block.Hash = hashnonce.second;
+         block.Nonce = hashnonce.nonce;
+         block.Hash = hashnonce.hash;
          
          return block;
      }
 
-    
+    // Constructor
      Blockchain(){
          blockchain = {NewBlock("Genesis Block", "")};
      }
 
+     // Add block to blockchain
      void AddBlock(string data ) {
          Block prevBlock = blockchain.back();
          Block newBlock = NewBlock(data, prevBlock.Hash);
@@ -115,6 +150,7 @@ class Blockchain
             
 };
 
+// Test function 
 int main() {
 	Blockchain bc = Blockchain();
 
