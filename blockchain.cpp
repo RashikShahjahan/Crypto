@@ -7,11 +7,14 @@
 #include <sstream>
 #include <chrono>
 #include<ctime>
+#include <nlohmann/json.hpp>
+#include <leveldb/db.h>
+#include <cassert>
 
 
-
+using nlohmann::json;
 using namespace std;
-
+namespace ns{
 //Specifies difficulty at which the block was mined
 const int targetBits = 24;
 
@@ -143,12 +146,28 @@ bool Validate(ProofOfWork* pow) {
           }
 }
 
+
+     void Serialize(json& j, const Block& b) {
+        j = json{ {"Timestamp", b.Timestamp}, {"Nonce", b.Nonce}, {"Data", b.Data},{"PrevBlockHash",b.PrevBlockHash},{"Hash",b.Hash} };
+    }
+            
+     void Deserialize(const json& j, Block& b) {
+        j.at("Timestamp").get_to(b.Timestamp);
+        j.at("Nonce").get_to(b.Nonce);
+        j.at("Data").get_to(b.Data);
+        j.at("PrevBlockHash").get_to(b.PrevBlockHash);
+        j.at("Hash").get_to(b.Hash);
+    }
+
+
 // Blockchain class
 class Blockchain  
 {  
      public:     
      vector<Block> blockchain;  
-
+     string tip; 
+     leveldb::DB* db;
+     
      // Create new block
      Block NewBlock(string data,string prevBlockHash){
          time_t result = time(nullptr);
@@ -164,9 +183,32 @@ class Blockchain
          return block;
      }
 
+
     // Constructor
      Blockchain(){
-         blockchain = {NewBlock("Genesis Block", "")};
+         leveldb::Options options;
+         options.create_if_missing = true;
+
+         leveldb::Status status = leveldb::DB::Open(options, "/tmp/testdb", &db);
+         assert(status.ok());
+
+         leveldb::Iterator* it = db->NewIterator(leveldb::ReadOptions());
+         it->SeekToFirst(); 
+         if(it->Valid() == false){
+             Block genesis =  NewBlock("Genesis block","");
+             json j;
+             Serialize(j,genesis);
+             status = db->Put(leveldb::WriteOptions(), genesis.Hash, j);
+             status = db->Put(leveldb::WriteOptions(), "l", genesis.Hash);
+             tip = genesis.Hash;
+
+         }
+
+         else{
+              status = db->Get(leveldb::ReadOptions(), "l", &tip);
+         }
+
+
      }
 
      // Add block to blockchain
@@ -176,11 +218,15 @@ class Blockchain
          blockchain.push_back(newBlock);
 
      }
-            
+
 };
+
+}
+
 
 // Test function 
 int main() {
+     using namespace ns;
 	Blockchain bc = Blockchain();
 
 
